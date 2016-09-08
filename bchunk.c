@@ -51,25 +51,23 @@
 #define WAV_DATA_HLEN 8
 #define WAV_HEADER_LEN WAV_RIFF_HLEN + WAV_FORMAT_HLEN + WAV_DATA_HLEN
 
-/*
- *	Ugly way to convert integers to little-endian format.
- *	First let netinet's hton() functions decide if swapping should
- *	be done, then convert back.
- */
-
 #include <inttypes.h>
-#include <netinet/in.h>
 
-#define bswap_16(x) \
-     ((((x) >> 8) & 0xff) | (((x) & 0xff) << 8))
-#define bswap_32(x) \
-     ((((x) & 0xff000000) >> 24) | (((x) & 0x00ff0000) >>  8) |  \
-      (((x) & 0x0000ff00) <<  8) | (((x) & 0x000000ff) << 24))
+static uint8_t* htoles(uint8_t* dst, uint16_t s)
+{
+    dst[0] = (s) & 0xFF;
+    dst[1] = (s >> 8) & 0xFF;
+    return dst;
+}
 
-#define htoles(x) bswap_16(htons(x))
-#define htolel(x) bswap_32(htonl(x))
-
-
+static uint8_t* htolel(uint8_t* dst, uint32_t l)
+{
+    dst[0] = (l) & 0xFF;
+    dst[1] = (l >> 8) & 0xFF;
+    dst[2] = (l >> 16) & 0xFF;
+    dst[3] = (l >> 24) & 0xFF;
+    return dst;
+}
 
 struct track_t {
 	int num;
@@ -279,7 +277,7 @@ int writetrack(FILE *bf, struct track_t *track, char *bname)
 	
 	printf("%2d: %s ", track->num, fname);
 	
-	if (!(f = fopen(fname, "w"))) {
+	if (!(f = fopen(fname, "wb"))) {
 		fprintf(stderr, " Could not fopen track file: %s\n", strerror(errno));
 		exit(4);
 	}
@@ -301,31 +299,32 @@ int writetrack(FILE *bf, struct track_t *track, char *bname)
 	printf("                                          ");
 	
 	if ((track->audio) && (towav)) {
+		uint8_t tmp[4];
 		// RIFF header
 		fputs("RIFF", f);
-		l = htolel(reallen + WAV_DATA_HLEN + WAV_FORMAT_HLEN + 4);
-		fwrite(&l, 4, 1, f);  // length of file, starting from WAVE
+		htolel(tmp, reallen + WAV_DATA_HLEN + WAV_FORMAT_HLEN + 4);
+		fwrite(tmp, 4, 1, f);  // length of file, starting from WAVE
 		fputs("WAVE", f);
 		// FORMAT header
 		fputs("fmt ", f);
-		l = htolel(0x10);     // length of FORMAT header
-		fwrite(&l, 4, 1, f);
-		i = htoles(0x01);     // constant
-		fwrite(&i, 2, 1, f);
-		i = htoles(0x02);	// channels
-		fwrite(&i, 2, 1, f);
-		l = htolel(44100);	// sample rate
-		fwrite(&l, 4, 1, f);
-		l = htolel(44100 * 4);	// bytes per second
-		fwrite(&l, 4, 1, f);
-		i = htoles(4);		// bytes per sample
-		fwrite(&i, 2, 1, f);
-		i = htoles(2*8);	// bits per channel
-		fwrite(&i, 2, 1, f);
+		htolel(tmp, 0x10);     // length of FORMAT header
+		fwrite(tmp, 4, 1, f);
+		htoles(tmp, 0x01);     // constant
+		fwrite(tmp, 2, 1, f);
+		htoles(tmp, 0x02);	// channels
+		fwrite(tmp, 2, 1, f);
+		htolel(tmp, 44100);	// sample rate
+		fwrite(tmp, 4, 1, f);
+		htolel(tmp, 44100 * 4);	// bytes per second
+		fwrite(tmp, 4, 1, f);
+		htoles(tmp, 4);		// bytes per sample
+		fwrite(tmp, 2, 1, f);
+		htoles(tmp, 2*8);	// bits per channel
+		fwrite(tmp, 2, 1, f);
 		// DATA header
 		fputs("data", f);
-		l = htolel(reallen);
-		fwrite(&l, 4, 1, f);
+		htolel(tmp, reallen);
+		fwrite(tmp, 4, 1, f);
 	}
 	
 	realsz = 0;
@@ -399,12 +398,12 @@ int main(int argc, char **argv)
 	
 	parse_args(argc, argv);
 	
-	if (!((binf = fopen(binfile, "r")))) {
+	if (!((binf = fopen(binfile, "rb")))) {
 		fprintf(stderr, "Could not open BIN %s: %s\n", binfile, strerror(errno));
 		return 2;
 	}
 	
-	if (!((cuef = fopen(cuefile, "r")))) {
+	if (!((cuef = fopen(cuefile, "rt")))) {
 		fprintf(stderr, "Could not open CUE %s: %s\n", cuefile, strerror(errno));
 		return 2;
 	}
